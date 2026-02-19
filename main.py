@@ -219,7 +219,7 @@ def main():
                 player.xp_next_level = int(player.xp_next_level * 1.8)
                 options_to_display = upgrade_mgr.get_random_choices(3)
 
-                if player.level % 1 == 0:
+                if player.level % 3 == 0:
                     # 1. On détruit tous les astéroïdes actuels
                     for asteroid in asteroids:
                         asteroid.kill()

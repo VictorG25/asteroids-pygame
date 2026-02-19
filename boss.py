@@ -23,8 +23,7 @@ class Boss(UFO):
         try:
             self.image = pygame.image.load("assets/images/faivreBoss.png").convert_alpha()
             self.image = pygame.transform.scale(self.image, (160, 160))
-            # On peut le teinter en rouge pour faire peur
-            self.image.fill((255, 100, 100, 255), special_flags=pygame.BLEND_RGBA_MULT)
+
         except:
             self.image = None
 
