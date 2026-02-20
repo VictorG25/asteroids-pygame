@@ -1,68 +1,112 @@
 import pygame
 import random
 import math
-from ufo import UFO
+from ufo import UFO, Explosion
 from constants import *
 from shot import Shot
-from audio_manager import AudioManager
+from asteroid import Asteroid
+
 
 class Boss(UFO):
-    audio = AudioManager()
-    audio.load_sound("boss_shoot", "assets/sounds/boss_laser.mp3", 0.4)
     def __init__(self):
-        # On l'appelle via super() mais on va booster ses stats
-        super().__init__(SCREEN_WIDTH / 2, -100)  # Il arrive d'en haut
-        self.radius = 80  # Très gros
-        self.health = 20  # Il faut 20 tirs pour le tuer
-        self.max_health = 20
-        self.velocity = pygame.Vector2(0, 50)  # Il descend doucement
-        self.shoot_timer = 1.5
-        self.target_y = 150  # Il s'arrête à cette hauteur
+        # On initialise via UFO avec le type boss pour éviter les mouvements auto
+        super().__init__(kind="boss")
 
-        # Image du Boss (tu pourras la remplacer par une image dédiée)
+        # Position de départ forcée (en haut, hors champ)
+        self.position = pygame.Vector2(SCREEN_WIDTH / 2, -200)
+        self.radius = 80
+        self.max_health = 40
+        self.health = self.max_health
+
+        self.entrance_speed = 120
+        self.target_y = 150
+        self.shoot_timer = 2.0
+        self.is_enraged = False
+
         try:
-            self.image = pygame.image.load("assets/images/faivreBoss.png").convert_alpha()
-            self.image = pygame.transform.scale(self.image, (160, 160))
-
+            # On charge l'image spécifique du boss
+            self.original_image = pygame.image.load("assets/images/faivreBoss.png").convert_alpha()
+            self.original_image = pygame.transform.scale(self.original_image, (160, 160))
+            self.image = self.original_image.copy()
+            self.rect = self.image.get_rect(center=self.position)
         except:
-            self.image = None
+            # Fallback si l'image est manquante
+            self.image = pygame.Surface((160, 160), pygame.SRCALPHA)
+            pygame.draw.circle(self.image, (255, 0, 0), (80, 80), 80)
+            self.rect = self.image.get_rect(center=self.position)
+
+        # On nettoie la zone pour le combat
+        for asteroid in Asteroid.containers[0]:
+            asteroid.kill()
 
     def update(self, dt, player_pos):
-        # Déplacement : descend jusqu'à target_y puis bouge de gauche à droite
+        # PHASE 1 : Entrée en scène
         if self.position.y < self.target_y:
-            self.position.y += self.velocity.y * dt
-        else:
-            # Mouvement de va-et-vient horizontal
-            self.position.x += math.sin(pygame.time.get_ticks() * 0.002) * 2
+            self.position.y += self.entrance_speed * dt
+            self.rect.center = self.position
+            return
 
-        # Tir de barrage : 3 tirs en éventail
+            # PHASE 2 : Mouvement de combat latéral
+        speed_factor = 0.001 if self.is_enraged else 0.0007
+        self.position.x = (SCREEN_WIDTH / 2) + math.sin(pygame.time.get_ticks() * speed_factor) * (SCREEN_WIDTH * 0.3)
+        self.rect.center = self.position
+
+        # Gestion de l'état "Rage"
+        if self.health <= self.max_health / 2 and not self.is_enraged:
+            self.is_enraged = True
+            if self.image:
+                self.image.fill((255, 100, 100), special_flags=pygame.BLEND_RGB_MULT)
+
+        # Tir
         self.shoot_timer -= dt
         if self.shoot_timer <= 0:
             self.shoot_triple(player_pos)
-            self.shoot_timer = 2.0
+            self.shoot_timer = 0.8 if self.is_enraged else 1.8
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.die()
+
+    def die(self):
+        Explosion(self.position.x, self.position.y, sound_type="mine")
+        self.kill()
 
     def shoot_triple(self, player_pos):
-        Boss.audio.play_sound("boss_shoot")
         direction = (player_pos - self.position).normalize()
-        # On crée 3 angles différents
-        angles = [-0.2, 0, 0.2]
+        angles = [-0.4, -0.2, 0, 0.2, 0.4] if self.is_enraged else [-0.2, 0, 0.2]
+
         for angle in angles:
             bullet_dir = direction.rotate_rad(angle)
             s = Shot(self.position.x, self.position.y)
-            s.velocity = bullet_dir * 300
+            s.velocity = bullet_dir * (400 if self.is_enraged else 250)
             s.owner = "ufo"
 
     def draw(self, screen):
-        # Dessin de l'image
+        # 1. Dessin du boss
         if self.image:
-            rect = self.image.get_rect(center=(self.position.x, self.position.y))
-            screen.blit(self.image, rect)
+            screen.blit(self.image, self.rect)
 
-        # Barre de vie au-dessus du boss
-        bar_width = 200
-        bar_height = 15
-        fill = (self.health / self.max_health) * bar_width
-        outline_rect = pygame.Rect(self.position.x - bar_width / 2, self.position.y - 100, bar_width, bar_height)
-        fill_rect = pygame.Rect(self.position.x - bar_width / 2, self.position.y - 100, fill, bar_height)
-        pygame.draw.rect(screen, (255, 0, 0), fill_rect)
-        pygame.draw.rect(screen, (255, 255, 255), outline_rect, 2)
+        # 2. Dessin de la barre de vie (seulement quand il est à l'écran)
+        if self.position.y >= 0:
+            bar_width = 400
+            bar_height = 20
+            # On centre la barre en haut de l'écran
+            bar_x = (SCREEN_WIDTH - bar_width) // 2
+            bar_y = 30
+
+            # Calcul du remplissage
+            health_ratio = max(0, self.health / self.max_health)
+            fill_width = int(bar_width * health_ratio)
+
+            # Fond de la barre (Rouge sombre)
+            pygame.draw.rect(screen, (80, 0, 0), (bar_x, bar_y, bar_width, bar_height))
+            # Remplissage (Rouge vif)
+            pygame.draw.rect(screen, (255, 0, 0), (bar_x, bar_y, fill_width, bar_height))
+            # Contour (Blanc)
+            pygame.draw.rect(screen, (255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 2)
+
+            # Optionnel : Nom du Boss au-dessus
+            # font = pygame.font.SysFont(None, 24)
+            # name_txt = font.render("COMMANDANT FAIVRE", True, "white")
+            # screen.blit(name_txt, (bar_x, bar_y - 20))

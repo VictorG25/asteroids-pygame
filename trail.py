@@ -3,34 +3,29 @@ import random
 
 
 class Trail(pygame.sprite.Sprite):
-    # On charge l'image de la traînée une seule fois
-    particle_image = None
-
+    # On n'a plus besoin de particle_image externe, on va dessiner des cercles
     def __init__(self, position):
         super().__init__(self.containers)
 
-        # Chargement de l'image si ce n'est pas fait
-        if Trail.particle_image is None:
-            Trail.particle_image = pygame.image.load("assets/images/exhaust_particle.png").convert_alpha()
-
-        # On ne veut pas que la traînée soit exactement sur le centre du vaisseau,
-        # mais un peu derrière. On peut ajouter un petit décalage aléatoire
         self.position = pygame.Vector2(position)
-        self.position.x += random.uniform(-5, 5)
-        self.position.y += random.uniform(-5, 5)
+        # Petit décalage aléatoire pour l'éparpillement des bulles
+        self.position.x += random.uniform(-8, 8)
+        self.position.y += random.uniform(-8, 8)
 
-        # On varie un peu la taille de départ pour chaque particule
-        scale = random.uniform(0.5, 1.2)
-        size = int(20 * scale)  # Taille de base de la particule
-        self.original_image = pygame.transform.scale(Trail.particle_image, (size, size))
+        # Propriétés de la bulle
+        self.radius = random.randint(2, 6)
+        self.lifetime = random.uniform(0.6, 1.2)  # Durée de vie variable
+        self.max_lifetime = self.lifetime
 
-        self.image = self.original_image.copy()
+        # Vitesse : les bulles remontent (Y négatif) et dérivent légèrement sur les côtés
+        self.velocity = pygame.Vector2(random.uniform(-15, 15), random.uniform(-60, -30))
+
+        # Création de l'image de la bulle (cercle blanc/bleu transparent)
+        self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        self.color = (200, 235, 255, 160)  # Bleu très clair et semi-transparent
+        pygame.draw.circle(self.image, self.color, (self.radius, self.radius), self.radius)
+
         self.rect = self.image.get_rect(center=self.position)
-
-        # Durée de vie
-        self.lifetime = 0.5
-        self.max_lifetime = 0.5
-        self.alpha = 200
 
     def update(self, dt):
         self.lifetime -= dt
@@ -38,18 +33,21 @@ class Trail(pygame.sprite.Sprite):
             self.kill()
             return
 
+        # 1. Mouvement : les bulles montent
+        self.position += self.velocity * dt
+        self.rect.center = self.position
+
+        # 2. Effet visuel : calcul du ratio de vie
         life_ratio = self.lifetime / self.max_lifetime
 
-        # Effet : La particule s'estompe et rétrécit
-        self.alpha = int(200 * life_ratio)
-        new_size = int(self.rect.width * life_ratio)
+        # 3. Réduction de la taille et de l'opacité
+        current_radius = max(1, int(self.radius * life_ratio))
+        alpha = int(160 * life_ratio)
 
-        if new_size > 0:
-            # Note : On réduit ici directement sans re-scale depuis l'original
-            # pour économiser de la performance sur beaucoup de particules
-            self.image.set_alpha(self.alpha)
-            # On ne change pas forcément la taille à chaque frame si c'est trop lourd,
-            # mais l'alpha suffit déjà pour un bel effet.
+        # On recrée une petite surface pour le changement de taille
+        self.image = pygame.Surface((current_radius * 2, current_radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(self.image, (200, 235, 255, alpha), (current_radius, current_radius), current_radius)
+        self.rect = self.image.get_rect(center=self.position)
 
     def draw(self, screen):
         screen.blit(self.image, self.rect)
